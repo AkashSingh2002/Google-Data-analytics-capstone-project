@@ -1,0 +1,177 @@
+---
+title: "R project"
+author: "akash singh"
+date: "2023-03-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# installing packages
+install.packages('tidyverse')
+install.packages('ggplot2')
+install.packages('lubridate')
+install.packages('dplyr')
+install.packages('readr')
+install.packages('janitor')
+install.packages('data.table')
+install.packages('tidyr')
+
+# Loading the libraries
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(dplyr)
+library(readr)
+library(janitor)
+library(data.table)
+library(tidyr)
+
+# Load dataset
+data <- read_csv("202004-divvy-tripdata.csv")
+
+# Check column names of each dataset for consistency
+colnames(data)
+
+# Remove column are not required beyond the scope of project
+
+data <- data %>%
+  select(-c(start_lat:end_lng))
+glimpse(data)
+
+# Rename columns for better readability
+
+data <- data %>%
+  rename(ride_type = rideable_type,
+         start_time = started_at,
+          end_time = ended_at,
+         customer_type = member_casual)
+glimpse(data)
+
+# Adding column for day of the week the trip started
+
+data$day_of_the_week <- format(as.Date(data$start_time),'%a')
+
+# Adding column for the month the trip started
+
+data$month <- format(as.Date(data$start_time),'%b_%y')
+
+#column for time of the day when the trip started
+#Time element needs to be extracted from start_time. However, as the times must be in POSIXct
+#(only times of class POSIXct are supported in ggplot2), a two-step conversion is needed. 
+#First the time is converted to a character vector, effectively stripping all the date information. 
+#The time is then converted back to POSIXct with today’s date – the date is of no interest to us,
+
+data$time <- format(data$start_time, format = "%H:%M")
+data$time <- as.POSIXct(data$time, format = "%H:%M")
+
+#column for trip duration in min
+data$trip_duration <- (as.double(difftime(data$end_time, data$start_time)))/60
+
+# check the dataframe
+glimpse(data)
+
+# checking for trip lengths less than 0
+nrow(subset(data,trip_duration < 0))
+
+#checking for testrides that were made by company for quality checks
+nrow(subset(data, start_station_name %like% "TEST"))
+nrow(subset(data, start_station_name %like% "test"))
+nrow(subset(data, start_station_name %like% "Test"))
+
+# remove negative trip durations 
+data2 <- data[!(data$trip_duration < 0),]
+
+#remove test rides
+data2<- data2[!((data2$start_station_name %like% "TEST" | data2$start_station_name %like% "test")),]
+
+#check dataframe
+glimpse(data2)
+
+# checking count of distinct values
+table(data2$customer_type)
+#aggregating total trip duration by customer type
+setNames(aggregate(trip_duration ~ customer_type, data2, sum), c("customer_type", "total_trip_duration(mins)"))
+
+# statictical summary of trip_duration for all trips
+summary(data2$trip_duration)
+
+
+#statistical summary of trip_duration by customer_type
+data2 %>%
+  group_by(customer_type) %>%
+  summarise(min_trip_duration = min(trip_duration),max_trip_duration = max(trip_duration),
+            median_trip_duration = median(trip_duration), mean_trip_duration = mean(trip_duration))
+
+data2 %>% 
+  group_by(customer_type, day_of_the_week) %>%  
+  summarise(number_of_rides = n(),average_duration_mins = mean(trip_duration)) %>% 
+  arrange(customer_type, desc(number_of_rides))
+
+# VISUALISATION
+
+data2 %>%
+  group_by(customer_type, day_of_the_week)%>%
+  summarise(number_of_rides=n())%>%
+  arrange(customer_type,day_of_the_week)%>%
+  ggplot(aes(x=day_of_the_week, y=number_of_rides,fill=customer_type))+
+  labs(title="total trips by customer types vs day of the week")+
+  geom_col(width=0.5,position = position_dodge(width=0.5))
+
+# Average no of trips by customer type and month
+
+data2 %>%
+  group_by(customer_type,month)%>%
+  summarise(number_of_rides = n(), 'average_duration_(mins)' = mean(trip_duration))%>%
+  arrange(customer_type,desc(number_of_rides))
+
+# VISUALISATION
+
+data2 %>%
+  group_by(customer_type,month)%>%
+  summarise(number_of_rides = n())%>%
+  arrange(customer_type,month)%>%
+  ggplot(aes(x=month, y = number_of_rides, fill = customer_type))+
+  labs(title = "total trips by customer type Vs. month")+
+  theme(axis.text.x = element_text(angle=30))+
+  geom_col(width=0.5, position = position_dodge(width=0.5))
+
+# Visualisation of average trip duration by custome type on each day of the week
+
+data2 %>%  
+  group_by(customer_type, day_of_the_week) %>% 
+  summarise(average_trip_duration = mean(trip_duration)) %>%
+  ggplot(aes(x = day_of_the_week, y = average_trip_duration, fill = customer_type)) +
+  geom_col(width=0.5, position = position_dodge(width=0.5)) + 
+  labs(title ="Average trip duration by customer type Vs. Day of the week")
+
+# Visualizaton of bike demand over 24 hr period (a day)
+
+data2 %>%  
+  group_by(customer_type, time) %>% 
+  summarise(number_of_trips = n()) %>%
+  ggplot(aes(x = time, y = number_of_trips, color = customer_type, group = customer_type)) +
+  geom_line() +
+  scale_x_datetime(date_breaks = "1 hour", minor_breaks = NULL,
+                   date_labels = "%H:%M", expand = c(0,0)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  labs(title ="Demand over 24 hours of a day", x = "Time of the day")
+
+
+data2 %>%
+  group_by(ride_type, customer_type) %>%
+  summarise(number_of_trips = n()) %>%  
+  ggplot(aes(x= ride_type, y=number_of_trips, fill= customer_type))+
+  geom_bar(width = 0.2, stat='identity') +
+  labs(title ="Ride type Vs. Number of trips")
+
+```
