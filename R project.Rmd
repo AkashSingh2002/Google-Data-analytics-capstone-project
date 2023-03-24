@@ -242,7 +242,6 @@ data2 %>%
   labs(title ="Ride type Vs. Number of trips")
 ```
 
-### The Share phase 
 
 #### Conclusions/Summary of insights 
 
